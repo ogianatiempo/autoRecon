@@ -8,7 +8,7 @@
 ####################################
 #            Configuration         #
 ####################################
-auquatoneThreads=5
+auquatoneThreads=2
 subdomainThreads=10
 dirsearchThreads=50
 dirsearchWordlist=~/tools/dirsearch/db/dicc.txt
@@ -110,7 +110,13 @@ waybackrecon(){
 }
 
 dirsearch(){
-    cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | xargs -P$subdomainThreads -I % sh -c "python3 ~/tools/dirsearch/dirsearch.py -e php,asp,aspx,jsp,html,zip,jar -w $dirsearchWordlist -t $dirsearchThreads -u % | grep Target && tput sgr0 && ./lazyrecon.sh -r $domain -r $foldername -r %"
+    mkdir $reconFolder/$domain/$subFolder/dirsearch
+
+    cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | while read line; do
+        of=$(echo $line | sed 's/\http\:\/\//http_/g' |  sed 's/\https\:\/\//https_/g')
+        echo "Running dirsearch for ${line}"
+        python3 ~/tools/dirsearch/dirsearch.py -e php,asp,aspx,jsp,html,zip,jar -w $dirsearchWordlist -t $dirsearchThreads -u ${line} --plain-text-report = $reconFolder/$domain/$subFolder/dirsearch/${of}
+    done
 }
 
 ## Directory creation
