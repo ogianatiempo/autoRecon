@@ -115,7 +115,7 @@ dirsearch(){
     cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | while read line; do
         of=$(echo $line | sed 's/\http\:\/\//http_/g' |  sed 's/\https\:\/\//https_/g')
         echo "Running dirsearch for ${line}"
-        python3 ~/tools/dirsearch/dirsearch.py -e php,asp,aspx,jsp,html,zip,jar -w $dirsearchWordlist -t $dirsearchThreads -u ${line} --plain-text-report = $reconFolder/$domain/$subFolder/dirsearch/${of}
+        python3 ~/tools/dirsearch/dirsearch.py -e php,asp,aspx,jsp,html,zip,jar -w $dirsearchWordlist -t $dirsearchThreads -u ${line} --plain-text-report $reconFolder/$domain/$subFolder/dirsearch/${of}
     done
 }
 
