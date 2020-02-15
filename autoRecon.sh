@@ -51,27 +51,70 @@ fi
 sublist3r(){
     python ~/tools/Sublist3r/sublist3r.py -d $domain -t 10 -v -o $reconFolder/$domain/$subFolder/sublist3r_temp.txt > /dev/null
     sed -i 's/<BR>/\n/g' $reconFolder/$domain/$subFolder/sublist3r_temp.txt # Fixes <BR> bug
-    cat $reconFolder/$domain/$subFolder/sublist3r_temp.txt | sort | uniq > $reconFolder/$domain/$subFolder/sublist3r.txt
+    cat $reconFolder/$domain/$subFolder/sublist3r_temp.txt | sort -u > $reconFolder/$domain/$subFolder/sublist3r.txt
     rm $reconFolder/$domain/$subFolder/sublist3r_temp.txt
 }
 
 mass(){
-    ~/tools/massdns/scripts/subbrute.py $massdnsWordlist $domain | sort | uniq | ~/tools/massdns/bin/massdns -r ~/tools/massdns/lists/resolvers.txt -t A -q -o S | awk  '{print $1}' | while read line; do
+    ~/tools/massdns/scripts/subbrute.py $massdnsWordlist $domain | sort -u | ~/tools/massdns/bin/massdns -r ~/tools/massdns/lists/resolvers.txt -t A -q -o S | awk  '{print $1}' | while read line; do
         x="$line"
         echo "${x%?}" >> $reconFolder/$domain/$subFolder/mass.txt
     done
 }
 
 searchcrtsh(){
-    ~/tools/massdns/scripts/ct.py $domain 2>/dev/null | sort | uniq | ~/tools/massdns/bin/massdns -r ~/tools/massdns/lists/resolvers.txt -t A -q -o S | awk  '{print $1}' | while read line; do
+    ~/tools/massdns/scripts/ct.py $domain 2>/dev/null | sort -u | ~/tools/massdns/bin/massdns -r ~/tools/massdns/lists/resolvers.txt -t A -q -o S | awk  '{print $1}' | while read line; do
         x="$line"
         echo "${x%?}" >> $reconFolder/$domain/$subFolder/crtsh.txt
     done
 }
 
+mergeDomains(){
+    cat $reconFolder/$domain/$subFolder/sublist3r.txt >> $reconFolder/$domain/$subFolder/allDomains_tmp.txt
+    cat $reconFolder/$domain/$subFolder/mass.txt >> $reconFolder/$domain/$subFolder/allDomains_tmp.txt
+    cat $reconFolder/$domain/$subFolder/crtsh.txt >> $reconFolder/$domain/$subFolder/allDomains_tmp.txt
+
+    sort -u $reconFolder/$domain/$subFolder/allDomains_tmp.txt > $reconFolder/$domain/$subFolder/allDomains.txt
+
+    rm $reconFolder/$domain/$subFolder/allDomains_tmp.txt
+}
+
+httpprobe(){
+    cat $reconFolder/$domain/$subFolder/allDomains.txt | httprobe -c 50 -t 10000 > $reconFolder/$domain/$subFolder/responsiveDomains.txt
+    echo  "${yellow}Total of $(wc -l $reconFolder/$domain/$subFolder/responsiveDomains.txt | awk '{print $1}') live subdomains were found${reset}"
+}
+
+aquatone(){
+    cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | aquatone -chrome-path $chromiumPath -out $reconFolder/$domain/$subFolder/aqua_out -threads $auquatoneThreads -silent -http-timeout 10000
+}
+
+waybackrecon(){
+    mkdir $reconFolder/$domain/$subFolder/wayback-data
+
+    cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | waybackurls > $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt
+
+    cat $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt  | sort -u | unfurl --unique keys > $reconFolder/$domain/$subFolder/wayback-data/paramlist.txt
+    [ -s $reconFolder/$domain/$subFolder/wayback-data/paramlist.txt ] && echo "Wordlist saved to /$domain/$foldername/wayback-data/paramlist.txt"
+
+    cat $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt  | sort -u | grep -P "\w+\.js(\?|$)" | sort -u > $reconFolder/$domain/$subFolder/wayback-data/jsurls.txt
+    [ -s $reconFolder/$domain/$subFolder/wayback-data/jsurls.txt ] && echo "JS Urls saved to /$domain/$foldername/wayback-data/jsurls.txt"
+
+    cat $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt  | sort -u | grep -P "\w+\.php(\?|$) | sort -u " > $reconFolder/$domain/$subFolder/wayback-data/phpurls.txt
+    [ -s $reconFolder/$domain/$subFolder/wayback-data/phpurls.txt ] && echo "PHP Urls saved to /$domain/$foldername/wayback-data/phpurls.txt"
+
+    cat $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt  | sort -u | grep -P "\w+\.aspx(\?|$) | sort -u " > $reconFolder/$domain/$subFolder/wayback-data/aspxurls.txt
+    [ -s $reconFolder/$domain/$subFolder/wayback-data/aspxurls.txt ] && echo "ASP Urls saved to /$domain/$foldername/wayback-data/aspxurls.txt"
+
+    cat $reconFolder/$domain/$subFolder/wayback-data/waybackurls.txt  | sort -u | grep -P "\w+\.jsp(\?|$) | sort -u " > $reconFolder/$domain/$subFolder/wayback-data/jspurls.txt
+    [ -s $reconFolder/$domain/$subFolder/wayback-data/jspurls.txt ] && echo "JSP Urls saved to /$domain/$foldername/wayback-data/jspurls.txt"
+}
+
+dirsearch(){
+    cat $reconFolder/$domain/$subFolder/responsiveDomains.txt | xargs -P$subdomainThreads -I % sh -c "python3 ~/tools/dirsearch/dirsearch.py -e php,asp,aspx,jsp,html,zip,jar -w $dirsearchWordlist -t $dirsearchThreads -u % | grep Target && tput sgr0 && ./lazyrecon.sh -r $domain -r $foldername -r %"
+}
 
 ## Directory creation
-echo "Starting enumeration on:"
+echo "Target domain:"
 echo "${green}${domain}${reset}"
 if [[ -n ${excluded} ]]; then
     echo "Excluded subdomains:"
@@ -106,3 +149,18 @@ echo "Running massdns subbrute"
 mass
 echo "Running massdns cert.sh"
 searchcrtsh
+
+mergeDomains
+
+echo "Probing for live hosts"
+httpprobe
+
+# Discovery
+echo "Starting aquatone scan"
+aquatone
+
+echo "Scraping wayback for data"
+waybackrecon
+
+echo "Searching for directories"
+dirsearch
